@@ -1,0 +1,214 @@
+<!doctype html>
+<html lang="pl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Sygnalizator zajętości</title>
+<style>
+  :root {
+    --bg: #eef1f4;
+    --surface: #ffffff;
+    --fg: #1a2230;
+    --muted: #5d6b7e;
+    --border: #d4dae2;
+    --free: #16a34a;
+    --free-glow: rgba(22, 163, 74, .45);
+    --busy: #dc2626;
+    --busy-glow: rgba(220, 38, 38, .5);
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0e1219;
+      --surface: #161c26;
+      --fg: #e8edf4;
+      --muted: #94a2b4;
+      --border: #28313f;
+      --free: #22c55e;
+      --free-glow: rgba(34, 197, 94, .5);
+      --busy: #ef4444;
+      --busy-glow: rgba(239, 68, 68, .55);
+      color-scheme: dark;
+    }
+  }
+
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--fg);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    display: flex;
+  }
+  main {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: clamp(20px, 4.5vh, 44px);
+    padding: max(28px, env(safe-area-inset-top, 0px)) max(16px, env(safe-area-inset-right, 0px)) max(28px, env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px));
+    text-align: center;
+  }
+
+  .light {
+    appearance: none;
+    border: none;
+    padding: 0;
+    cursor: pointer;
+    width: clamp(170px, 46vmin, 320px);
+    aspect-ratio: 1;
+    max-width: 100%;
+    border-radius: 50%;
+    background: #9aa6b4;
+    transition: background .3s ease, box-shadow .3s ease, transform .1s ease;
+  }
+  .light:active { transform: scale(.97); }
+  .light:focus-visible { outline: 3px solid var(--fg); outline-offset: 6px; }
+
+  body[data-state="free"] .light {
+    background: var(--free);
+    box-shadow: 0 0 0 10px color-mix(in srgb, var(--free) 22%, transparent),
+                0 0 80px 10px var(--free-glow),
+                inset 0 8px 26px rgba(255,255,255,.3),
+                inset 0 -12px 30px rgba(0,0,0,.22);
+  }
+  body[data-state="busy"] .light {
+    background: var(--busy);
+    box-shadow: 0 0 0 10px color-mix(in srgb, var(--busy) 22%, transparent),
+                0 0 90px 14px var(--busy-glow),
+                inset 0 8px 26px rgba(255,255,255,.28),
+                inset 0 -12px 30px rgba(0,0,0,.22);
+  }
+
+  .word {
+    font-weight: 800;
+    font-size: clamp(2.6rem, 12vw, 4.6rem);
+    letter-spacing: .04em;
+    line-height: 1;
+  }
+  body[data-state="free"] .word { color: var(--free); }
+  body[data-state="busy"] .word { color: var(--busy); }
+  body[data-state="wait"] .word { color: var(--muted); }
+  .sub {
+    margin: .6rem 0 0;
+    font-size: clamp(.95rem, 3.2vw, 1.1rem);
+    color: var(--muted);
+    max-width: 36ch;
+  }
+
+  .toggle {
+    appearance: none;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--fg);
+    border-radius: 14px;
+    padding: 15px 28px;
+    font-size: 1.1rem;
+    font-weight: 700;
+    font-family: inherit;
+    cursor: pointer;
+    transition: border-color .2s ease, transform .1s ease;
+  }
+  .toggle:hover { border-color: color-mix(in srgb, var(--fg) 35%, var(--border)); }
+  .toggle:active { transform: translateY(1px); }
+  .toggle:focus-visible { outline: 2px solid var(--fg); outline-offset: 2px; }
+  .toggle[disabled] { opacity: .5; cursor: default; }
+</style>
+</head>
+<body data-state="wait">
+<main>
+  <button class="light" id="light" aria-label="Przełącz światło"></button>
+  <div>
+    <div class="word" id="word">Łączenie…</div>
+    <p class="sub" id="sub">Łączę z serwerem synchronizacji.</p>
+  </div>
+  <button class="toggle" id="toggle" disabled>Przełącz</button>
+</main>
+
+<!-- ============================================================= -->
+<!--  KONFIGURACJA — wklej tu dane ze swojego projektu Firebase.    -->
+<!--  Instrukcja krok po kroku jest w pliku README.                -->
+<!-- ============================================================= -->
+<script>
+  var firebaseConfig = {
+    apiKey: "WKLEJ_API_KEY",
+    authDomain: "WKLEJ_PROJECT.firebaseapp.com",
+    databaseURL: "https://WKLEJ_PROJECT-default-rtdb.firebaseio.com",
+    projectId: "WKLEJ_PROJECT"
+  };
+  // Nazwa „kanału". Jeśli chcesz kilka niezależnych sygnalizatorów,
+  // zmień to na różne wartości na różnych stronach.
+  var KANAL = "sygnalizator/stan";
+</script>
+
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
+<script>
+  var body = document.body;
+  var elLight = document.getElementById("light");
+  var elWord = document.getElementById("word");
+  var elSub = document.getElementById("sub");
+  var elToggle = document.getElementById("toggle");
+
+  var busy = false;
+  var known = false;
+  var ref = null;
+
+  function render() {
+    if (!known) {
+      body.setAttribute("data-state", "wait");
+      elWord.textContent = "Łączenie…";
+      elToggle.disabled = true;
+      return;
+    }
+    body.setAttribute("data-state", busy ? "busy" : "free");
+    elWord.textContent = busy ? "ZAJĘTE" : "WOLNE";
+    elToggle.textContent = busy ? "Przełącz na zielone" : "Przełącz na czerwone";
+    elToggle.disabled = false;
+    elSub.textContent = "Kliknij światło albo przycisk. Zmiana pojawi się na drugim komputerze.";
+  }
+
+  function fail(msg) {
+    known = false;
+    body.setAttribute("data-state", "wait");
+    elWord.textContent = "Konfiguracja";
+    elSub.textContent = msg;
+    elToggle.disabled = true;
+  }
+
+  function toggle() {
+    if (!known || !ref) return;
+    var next = !busy;
+    busy = next;           // od razu pokaż lokalnie
+    render();
+    ref.set({ busy: next, ts: Date.now() });
+  }
+
+  elLight.addEventListener("click", toggle);
+  elToggle.addEventListener("click", toggle);
+
+  render();
+
+  if (String(firebaseConfig.apiKey).indexOf("WKLEJ") === 0) {
+    fail("Uzupełnij dane Firebase w pliku index.html (sekcja KONFIGURACJA) — instrukcja w README.");
+  } else {
+    try {
+      firebase.initializeApp(firebaseConfig);
+      ref = firebase.database().ref(KANAL);
+      ref.on("value", function (snap) {
+        var v = snap.val();
+        busy = !!(v && v.busy === true);
+        known = true;
+        render();
+      }, function () {
+        fail("Brak dostępu do bazy. Sprawdź reguły (Rules) w Firebase — muszą pozwalać na odczyt i zapis.");
+      });
+    } catch (e) {
+      fail("Błąd połączenia z Firebase. Sprawdź dane konfiguracji w index.html.");
+    }
+  }
+</script>
+</body>
+</html>
